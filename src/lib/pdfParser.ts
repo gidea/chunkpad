@@ -4,9 +4,10 @@ import * as pdfjsLib from "pdfjs-dist";
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 export async function parsePdf(arrayBuffer: ArrayBuffer): Promise<string> {
+  let pdf: Awaited<ReturnType<typeof pdfjsLib.getDocument>> | null = null;
   try {
     const typedArray = new Uint8Array(arrayBuffer);
-    const pdf = await pdfjsLib.getDocument(typedArray).promise;
+    pdf = await pdfjsLib.getDocument(typedArray).promise;
     
     const htmlPages: string[] = [];
     
@@ -72,5 +73,15 @@ ${paragraphsHtml}
   } catch (error) {
     console.error("Error parsing PDF:", error);
     throw new Error("Failed to parse .pdf file");
+  } finally {
+    // Clean up PDF document to free memory
+    if (pdf) {
+      try {
+        pdf.destroy();
+      } catch (cleanupError) {
+        // Ignore cleanup errors
+        console.warn("Error cleaning up PDF document:", cleanupError);
+      }
+    }
   }
 }

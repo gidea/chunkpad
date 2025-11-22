@@ -67,6 +67,15 @@ export const MarkdownEditor = ({ chunk, onContentChange, onDeleteChunk, onTitleC
     },
   });
 
+  // Clean up editor on unmount
+  useEffect(() => {
+    return () => {
+      if (editor) {
+        editor.destroy();
+      }
+    };
+  }, [editor]);
+
   // Update editor content when chunk changes
   useEffect(() => {
     if (editor && chunk) {

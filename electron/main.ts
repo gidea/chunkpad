@@ -150,44 +150,74 @@ async function createWindow() {
     },
   });
 
-  // Log preload script loading events
-  win.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+  // Store event listener cleanup functions
+  const cleanupFunctions: Array<() => void> = [];
+
+  // Log preload script loading events and handle errors
+  const didFailLoadHandler = (event: Electron.Event, errorCode: number, errorDescription: string, validatedURL?: string, isMainFrame?: boolean) => {
     console.error('[WINDOW] Failed to load:', {
       errorCode,
       errorDescription,
       validatedURL,
       isMainFrame,
     });
-  });
+    // Show error page if window exists
+    if (win) {
+      const errorHtml = `
+        <div style="padding: 20px; font-family: system-ui;">
+          <h1>Failed to load application</h1>
+          <p>Error: ${errorCode} - ${errorDescription}</p>
+          <p>Preload: ${preload}</p>
+          <p>HTML: ${indexHtml}</p>
+          <p>Dev Server: ${VITE_DEV_SERVER_URL || 'none'}</p>
+        </div>
+      `;
+      win.webContents.executeJavaScript(`document.body.innerHTML = ${JSON.stringify(errorHtml)};`).catch(() => {
+        // Ignore errors if page is not ready
+      });
+    }
+  };
+  win.webContents.on('did-fail-load', didFailLoadHandler);
+  cleanupFunctions.push(() => win.webContents.removeListener('did-fail-load', didFailLoadHandler));
 
-  win.webContents.on('preload-error', (event, preloadPath, error) => {
+  const preloadErrorHandler = (event: Electron.Event, preloadPath: string, error: Error) => {
     console.error('[PRELOAD] ✗ Preload script error event fired!');
     console.error('[PRELOAD] Path:', preloadPath);
     console.error('[PRELOAD] Error message:', error?.message || error);
     console.error('[PRELOAD] Error name:', error?.name);
     console.error('[PRELOAD] Error stack:', error?.stack);
     console.error('[PRELOAD] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
-  });
+  };
+  win.webContents.on('preload-error', preloadErrorHandler);
+  cleanupFunctions.push(() => win.webContents.removeListener('preload-error', preloadErrorHandler));
 
   // Additional error handlers for better debugging
-  win.webContents.on('console-message', (event, level, message, line, sourceId) => {
+  const consoleMessageHandler = (event: Electron.Event, level: number, message: string, line: number, sourceId: string) => {
     if (level >= 2) { // Error (2) or warning (1)
       const levelName = level === 2 ? 'WARN' : level === 3 ? 'ERROR' : 'LOG';
       console.log(`[RENDERER ${levelName}]`, message, sourceId ? `(${sourceId}:${line})` : '');
     }
-  });
+  };
+  win.webContents.on('console-message', consoleMessageHandler);
+  cleanupFunctions.push(() => win.webContents.removeListener('console-message', consoleMessageHandler));
 
-  win.webContents.on('render-process-gone', (event, details) => {
+  const renderProcessGoneHandler = (event: Electron.Event, details: Electron.RenderProcessGoneDetails) => {
     console.error('[RENDERER] ✗ Process gone:', JSON.stringify(details, null, 2));
-  });
+  };
+  win.webContents.on('render-process-gone', renderProcessGoneHandler);
+  cleanupFunctions.push(() => win.webContents.removeListener('render-process-gone', renderProcessGoneHandler));
 
-  win.webContents.on('unresponsive', () => {
+  const unresponsiveHandler = () => {
     console.error('[RENDERER] ✗ Process unresponsive');
-  });
+  };
+  win.webContents.on('unresponsive', unresponsiveHandler);
+  cleanupFunctions.push(() => win.webContents.removeListener('unresponsive', unresponsiveHandler));
 
-  win.webContents.on('responsive', () => {
+  const responsiveHandler = () => {
     console.log('[RENDERER] ✓ Process responsive again');
-  });
+  };
+  win.webContents.on('responsive', responsiveHandler);
+  cleanupFunctions.push(() => win.webContents.removeListener('responsive', responsiveHandler));
 
   // Ensure window is visible and focused
   win.once('ready-to-show', () => {
@@ -207,28 +237,14 @@ async function createWindow() {
     }
   }, 1000);
 
-  // Handle errors
-  win.webContents.on('did-fail-load', (event, errorCode, errorDescription) => {
-    console.error('Failed to load:', errorCode, errorDescription);
-    if (win) {
-      const errorHtml = `
-        <div style="padding: 20px; font-family: system-ui;">
-          <h1>Failed to load application</h1>
-          <p>Error: ${errorCode} - ${errorDescription}</p>
-          <p>Preload: ${preload}</p>
-          <p>HTML: ${indexHtml}</p>
-          <p>Dev Server: ${VITE_DEV_SERVER_URL || 'none'}</p>
-        </div>
-      `;
-      win.webContents.executeJavaScript(`document.body.innerHTML = ${JSON.stringify(errorHtml)};`);
-    }
-  });
 
   // Test active push message to Renderer-process
-  win.webContents.on('did-finish-load', () => {
+  const didFinishLoadHandler = () => {
     console.log('Window finished loading');
     win?.webContents.send('main-process-message', new Date().toLocaleString());
-  });
+  };
+  win.webContents.on('did-finish-load', didFinishLoadHandler);
+  cleanupFunctions.push(() => win.webContents.removeListener('did-finish-load', didFinishLoadHandler));
 
   if (VITE_DEV_SERVER_URL) {
     // Development: Load from Vite dev server
@@ -247,12 +263,21 @@ async function createWindow() {
   }
 
   // Ensure window is visible after page loads
-  win.webContents.once('did-finish-load', () => {
+  const didFinishLoadOnceHandler = () => {
     console.log('Page finished loading, ensuring window is visible');
     if (win && !win.isVisible()) {
       win.show();
       win.focus();
     }
+  };
+  win.webContents.once('did-finish-load', didFinishLoadOnceHandler);
+  // Note: once() handlers don't need cleanup, but we track it for consistency
+
+  // Clean up event listeners when window is closed
+  win.on('closed', () => {
+    cleanupFunctions.forEach(cleanup => cleanup());
+    cleanupFunctions.length = 0;
+    win = null;
   });
 
   // Create application menu

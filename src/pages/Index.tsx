@@ -268,6 +268,37 @@ const Index = () => {
     }
   }, [files, chunksData, globalMetadata, chunkSize, overlapSize, toast]);
 
+  // Shared function to restore project state
+  const restoreProjectState = useCallback((projectData: ReturnType<typeof parseProject>, filePath: string) => {
+    if (!projectData) {
+      return false;
+    }
+
+    // Restore project state
+    setFiles(projectData.files);
+    setChunksData(projectData.chunksData);
+    setGlobalMetadata(projectData.globalMetadata);
+    setChunkSize(projectData.chunkSize);
+    setOverlapSize(projectData.overlapSize);
+    setProjectPath(filePath);
+
+    // Select first file and chunk if available
+    if (projectData.files.length > 0) {
+      setSelectedFileId(projectData.files[0].id);
+      const firstFileChunks = projectData.chunksData[projectData.files[0].id] || [];
+      if (firstFileChunks.length > 0) {
+        setSelectedChunkId(firstFileChunks[0].id);
+      } else {
+        setSelectedChunkId(null);
+      }
+    } else {
+      setSelectedFileId(null);
+      setSelectedChunkId(null);
+    }
+
+    return true;
+  }, []);
+
   // Load Project
   const handleLoadProject = useCallback(async () => {
     const isElectron = typeof window !== 'undefined' && 'electronAPI' in window;
@@ -305,27 +336,7 @@ const Index = () => {
         return;
       }
 
-      // Restore project state
-      setFiles(projectData.files);
-      setChunksData(projectData.chunksData);
-      setGlobalMetadata(projectData.globalMetadata);
-      setChunkSize(projectData.chunkSize);
-      setOverlapSize(projectData.overlapSize);
-      setProjectPath(filePath);
-
-      // Select first file and chunk if available
-      if (projectData.files.length > 0) {
-        setSelectedFileId(projectData.files[0].id);
-        const firstFileChunks = projectData.chunksData[projectData.files[0].id] || [];
-        if (firstFileChunks.length > 0) {
-          setSelectedChunkId(firstFileChunks[0].id);
-        } else {
-          setSelectedChunkId(null);
-        }
-      } else {
-        setSelectedFileId(null);
-        setSelectedChunkId(null);
-      }
+      restoreProjectState(projectData, filePath);
 
       setIsLoading(false);
       toast({
@@ -341,7 +352,7 @@ const Index = () => {
         variant: "destructive",
       });
     }
-  }, [toast]);
+  }, [toast, restoreProjectState]);
 
   // Listen for Electron menu events
   useEffect(() => {
@@ -403,27 +414,7 @@ const Index = () => {
         return;
       }
 
-      // Restore project state
-      setFiles(parsed.files);
-      setChunksData(parsed.chunksData);
-      setGlobalMetadata(parsed.globalMetadata);
-      setChunkSize(parsed.chunkSize);
-      setOverlapSize(parsed.overlapSize);
-      setProjectPath(filePath);
-
-      // Select first file and chunk if available
-      if (parsed.files.length > 0) {
-        setSelectedFileId(parsed.files[0].id);
-        const firstFileChunks = parsed.chunksData[parsed.files[0].id] || [];
-        if (firstFileChunks.length > 0) {
-          setSelectedChunkId(firstFileChunks[0].id);
-        } else {
-          setSelectedChunkId(null);
-        }
-      } else {
-        setSelectedFileId(null);
-        setSelectedChunkId(null);
-      }
+      restoreProjectState(parsed, filePath);
 
       toast({
         title: "Project loaded",
@@ -442,7 +433,7 @@ const Index = () => {
       removeFileOpenDocumentListener();
       removeFileOpenProjectListener();
     };
-  }, [handleOpenFile, handleSaveProject, handleSaveProjectAs, handleLoadProject, handleFileLoad, toast]);
+  }, [handleOpenFile, handleSaveProject, handleSaveProjectAs, handleLoadProject, handleFileLoad, restoreProjectState, toast]);
 
   // Global keyboard shortcut: Cmd/Ctrl+? to show shortcuts
   useEffect(() => {
@@ -635,18 +626,11 @@ const Index = () => {
   const handleApplyMetadataToAll = (metadata: ChunkMetadata) => {
     if (!selectedFileId) return;
 
-    console.log("Applying metadata to all chunks:", metadata);
-
     const fileChunks = chunksData[selectedFileId] || [];
     const updatedChunks = fileChunks.map((chunk) => ({
       ...chunk,
       metadata: { ...metadata },
     }));
-
-    console.log(
-      "Updated chunks:",
-      updatedChunks.map((c) => ({ id: c.id, metadata: c.metadata })),
-    );
 
     setChunksData({
       ...chunksData,

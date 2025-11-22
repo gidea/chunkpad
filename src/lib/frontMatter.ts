@@ -4,20 +4,15 @@ export function parseFrontMatter(content: string): {
   metadata: ChunkMetadata;
   content: string;
 } {
-  console.log("parseFrontMatter called with content:", content.substring(0, 200));
-  
   const frontMatterRegex = /^---\s*\n([\s\S]*?)\n---\s*\n([\s\S]*)$/;
   const match = content.match(frontMatterRegex);
 
   if (!match) {
-    console.log("No front matter found");
     return { metadata: {}, content };
   }
 
   const [, frontMatterStr, contentWithoutFrontMatter] = match;
   const metadata: ChunkMetadata = {};
-
-  console.log("Front matter string found:", frontMatterStr);
 
   // Parse front matter lines
   const lines = frontMatterStr.split("\n");
@@ -32,8 +27,6 @@ export function parseFrontMatter(content: string): {
     }
   }
 
-  console.log("Parsed metadata:", metadata);
-
   return { metadata, content: contentWithoutFrontMatter };
 }
 
@@ -41,11 +34,7 @@ export function stringifyFrontMatter(
   metadata: ChunkMetadata,
   content: string
 ): string {
-  console.log("stringifyFrontMatter called with metadata:", metadata);
-  
   const metadataEntries = Object.entries(metadata).filter(([_, value]) => value);
-  
-  console.log("Filtered metadata entries:", metadataEntries);
   
   if (metadataEntries.length === 0) {
     return content;
@@ -55,8 +44,5 @@ export function stringifyFrontMatter(
     .map(([key, value]) => `${key}: ${value}`)
     .join("\n");
 
-  const result = `---\n${frontMatter}\n---\n\n${content}`;
-  console.log("stringifyFrontMatter result:", result.substring(0, 200));
-  
-  return result;
+  return `---\n${frontMatter}\n---\n\n${content}`;
 }
