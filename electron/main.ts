@@ -178,7 +178,11 @@ async function createWindow() {
     }
   };
   win.webContents.on('did-fail-load', didFailLoadHandler);
-  cleanupFunctions.push(() => win.webContents.removeListener('did-fail-load', didFailLoadHandler));
+  cleanupFunctions.push(() => {
+    if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.removeListener('did-fail-load', didFailLoadHandler);
+    }
+  });
 
   const preloadErrorHandler = (event: Electron.Event, preloadPath: string, error: Error) => {
     console.error('[PRELOAD] ✗ Preload script error event fired!');
@@ -189,7 +193,11 @@ async function createWindow() {
     console.error('[PRELOAD] Full error object:', JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
   };
   win.webContents.on('preload-error', preloadErrorHandler);
-  cleanupFunctions.push(() => win.webContents.removeListener('preload-error', preloadErrorHandler));
+  cleanupFunctions.push(() => {
+    if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.removeListener('preload-error', preloadErrorHandler);
+    }
+  });
 
   // Additional error handlers for better debugging
   const consoleMessageHandler = (event: Electron.Event, level: number, message: string, line: number, sourceId: string) => {
@@ -199,25 +207,41 @@ async function createWindow() {
     }
   };
   win.webContents.on('console-message', consoleMessageHandler);
-  cleanupFunctions.push(() => win.webContents.removeListener('console-message', consoleMessageHandler));
+  cleanupFunctions.push(() => {
+    if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.removeListener('console-message', consoleMessageHandler);
+    }
+  });
 
   const renderProcessGoneHandler = (event: Electron.Event, details: Electron.RenderProcessGoneDetails) => {
     console.error('[RENDERER] ✗ Process gone:', JSON.stringify(details, null, 2));
   };
   win.webContents.on('render-process-gone', renderProcessGoneHandler);
-  cleanupFunctions.push(() => win.webContents.removeListener('render-process-gone', renderProcessGoneHandler));
+  cleanupFunctions.push(() => {
+    if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.removeListener('render-process-gone', renderProcessGoneHandler);
+    }
+  });
 
   const unresponsiveHandler = () => {
     console.error('[RENDERER] ✗ Process unresponsive');
   };
   win.webContents.on('unresponsive', unresponsiveHandler);
-  cleanupFunctions.push(() => win.webContents.removeListener('unresponsive', unresponsiveHandler));
+  cleanupFunctions.push(() => {
+    if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.removeListener('unresponsive', unresponsiveHandler);
+    }
+  });
 
   const responsiveHandler = () => {
     console.log('[RENDERER] ✓ Process responsive again');
   };
   win.webContents.on('responsive', responsiveHandler);
-  cleanupFunctions.push(() => win.webContents.removeListener('responsive', responsiveHandler));
+  cleanupFunctions.push(() => {
+    if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.removeListener('responsive', responsiveHandler);
+    }
+  });
 
   // Ensure window is visible and focused
   win.once('ready-to-show', () => {
@@ -244,7 +268,11 @@ async function createWindow() {
     win?.webContents.send('main-process-message', new Date().toLocaleString());
   };
   win.webContents.on('did-finish-load', didFinishLoadHandler);
-  cleanupFunctions.push(() => win.webContents.removeListener('did-finish-load', didFinishLoadHandler));
+  cleanupFunctions.push(() => {
+    if (win && !win.isDestroyed() && win.webContents && !win.webContents.isDestroyed()) {
+      win.webContents.removeListener('did-finish-load', didFinishLoadHandler);
+    }
+  });
 
   if (VITE_DEV_SERVER_URL) {
     // Development: Load from Vite dev server
@@ -273,10 +301,22 @@ async function createWindow() {
   win.webContents.once('did-finish-load', didFinishLoadOnceHandler);
   // Note: once() handlers don't need cleanup, but we track it for consistency
 
-  // Clean up event listeners when window is closed
-  win.on('closed', () => {
-    cleanupFunctions.forEach(cleanup => cleanup());
+  // Clean up event listeners when window is about to close (before destruction)
+  win.on('close', () => {
+    // Clean up listeners before window is destroyed
+    cleanupFunctions.forEach(cleanup => {
+      try {
+        cleanup();
+      } catch (error) {
+        // Ignore errors if window is already destroyed
+        console.warn('Error during cleanup:', error);
+      }
+    });
     cleanupFunctions.length = 0;
+  });
+
+  // Set win to null after window is fully closed
+  win.on('closed', () => {
     win = null;
   });
 
