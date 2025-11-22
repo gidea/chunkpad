@@ -1,0 +1,215 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 210 20% 98%;
+    --foreground: 215 25% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 215 25% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 215 25% 15%;
+
+    --primary: 215 85% 55%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 20% 96%;
+    --secondary-foreground: 215 25% 15%;
+
+    --muted: 210 20% 94%;
+    --muted-foreground: 215 15% 45%;
+
+    --accent: 215 85% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 215 20% 88%;
+    --input: 215 20% 88%;
+    --ring: 215 85% 55%;
+
+    --radius: 0.375rem;
+
+    /* Editor-specific tokens */
+    --editor-bg: 0 0% 100%;
+    --editor-border: 215 20% 92%;
+    --selected-bg: 215 95% 95%;
+    --selected-border: 215 85% 55%;
+    --hover-bg: 210 25% 97%;
+    
+    /* Sidebar colors */
+    --sidebar-background: 215 25% 96%;
+    --sidebar-foreground: 215 25% 15%;
+    --sidebar-primary: 215 85% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 215 95% 95%;
+    --sidebar-accent-foreground: 215 25% 15%;
+    --sidebar-border: 215 20% 88%;
+    --sidebar-ring: 215 85% 55%;
+  }
+
+  .dark {
+    --background: 215 30% 8%;
+    --foreground: 210 20% 95%;
+
+    --card: 215 25% 12%;
+    --card-foreground: 210 20% 95%;
+
+    --popover: 215 25% 12%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 215 80% 60%;
+    --primary-foreground: 215 30% 8%;
+
+    --secondary: 215 25% 15%;
+    --secondary-foreground: 210 20% 95%;
+
+    --muted: 215 25% 15%;
+    --muted-foreground: 215 15% 60%;
+
+    --accent: 215 80% 60%;
+    --accent-foreground: 215 30% 8%;
+
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 20% 95%;
+
+    --border: 215 25% 18%;
+    --input: 215 25% 18%;
+    --ring: 215 80% 60%;
+
+    /* Editor-specific tokens */
+    --editor-bg: 215 25% 10%;
+    --editor-border: 215 25% 18%;
+    --selected-bg: 215 60% 18%;
+    --selected-border: 215 80% 60%;
+    --hover-bg: 215 30% 12%;
+    
+    /* Sidebar colors */
+    --sidebar-background: 215 30% 8%;
+    --sidebar-foreground: 210 20% 95%;
+    --sidebar-primary: 215 80% 60%;
+    --sidebar-primary-foreground: 215 30% 8%;
+    --sidebar-accent: 215 60% 18%;
+    --sidebar-accent-foreground: 210 20% 95%;
+    --sidebar-border: 215 25% 18%;
+    --sidebar-ring: 215 80% 60%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+@layer utilities {
+  .editor-pane {
+    @apply bg-[hsl(var(--editor-bg))] border border-[hsl(var(--editor-border))];
+  }
+  
+  .item-selected {
+    @apply bg-[hsl(var(--selected-bg))] border-l-2 border-l-[hsl(var(--selected-border))];
+  }
+  
+  .item-hover {
+    @apply hover:bg-[hsl(var(--hover-bg))] transition-colors duration-150;
+  }
+}
+
+/* TipTap editor styles */
+.tiptap {
+  @apply min-h-full text-foreground;
+}
+
+.tiptap:focus {
+  @apply outline-none;
+}
+
+.tiptap h1 {
+  @apply text-3xl font-bold mt-6 mb-4;
+}
+
+.tiptap h2 {
+  @apply text-2xl font-bold mt-5 mb-3;
+}
+
+.tiptap h3 {
+  @apply text-xl font-bold mt-4 mb-2;
+}
+
+.tiptap h4 {
+  @apply text-lg font-semibold mt-3 mb-2;
+}
+
+.tiptap h5 {
+  @apply text-base font-semibold mt-3 mb-2;
+}
+
+.tiptap h6 {
+  @apply text-sm font-semibold mt-2 mb-1;
+}
+
+.tiptap p {
+  @apply my-3 leading-relaxed;
+}
+
+.tiptap ul,
+.tiptap ol {
+  @apply my-3 pl-6;
+}
+
+.tiptap ul {
+  @apply list-disc;
+}
+
+.tiptap ol {
+  @apply list-decimal;
+}
+
+.tiptap li {
+  @apply my-1;
+}
+
+.tiptap code {
+  @apply bg-muted px-1.5 py-0.5 rounded text-sm font-mono;
+}
+
+.tiptap pre {
+  @apply bg-muted p-4 rounded-lg my-4 overflow-x-auto;
+}
+
+.tiptap pre code {
+  @apply bg-transparent p-0 text-sm;
+}
+
+.tiptap blockquote {
+  @apply border-l-4 border-primary pl-4 my-4 italic text-muted-foreground;
+}
+
+.tiptap hr {
+  @apply my-6 border-t border-border;
+}
+
+.tiptap strong {
+  @apply font-bold;
+}
+
+.tiptap em {
+  @apply italic;
+}
+
+.tiptap s {
+  @apply line-through;
+}
