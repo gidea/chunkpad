@@ -34,7 +34,10 @@ interface MarkdownEditorProps {
 }
 
 const extensions = [
-  StarterKit,
+  StarterKit.configure({
+    // Exclude Link extension since we configure it separately
+    link: false,
+  }),
   TextStyle,
   Table.configure({
     resizable: true,
