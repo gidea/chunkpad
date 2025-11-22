@@ -112,3 +112,186 @@ Before committing changes to Electron main process:
 
 **Last Updated:** v0.1.1 - After fixing window creation hang
 
+---
+
+## Electron Security Best Practices
+
+**Reference:** [Electron Security Guidelines](https://www.electronjs.org/docs/latest/tutorial/security)
+
+### Current Security Status
+
+#### ✅ **Implemented (Good)**
+
+1. **Node.js Integration Disabled** ✅
+   - `nodeIntegration: false` in webPreferences
+   - Prevents remote content from accessing Node.js APIs
+
+2. **Context Isolation Enabled** ✅
+   - `contextIsolation: true` in webPreferences
+   - Isolates preload script from renderer process
+
+3. **Secure IPC Bridge** ✅
+   - Preload script uses `contextBridge.exposeInMainWorld`
+   - Does NOT expose raw `ipcRenderer` APIs
+   - Callbacks properly sanitize event objects (no direct event passing)
+
+4. **Window Creation Handler** ✅
+   - `setWindowOpenHandler` implemented
+   - External links opened in default browser
+   - New window creation denied
+
+5. **Current Electron Version** ✅
+   - Using Electron 39.2.3 (latest as of review)
+   - Regularly updated
+
+6. **Secure Content Loading** ✅
+   - Only loads local content (file:// or localhost in dev)
+   - No remote content loaded
+
+#### ⚠️ **Needs Improvement**
+
+1. **Sandbox Mode Disabled** ⚠️
+   - Current: `sandbox: false`
+   - **Recommendation**: Enable sandbox mode
+   - **Note**: May require refactoring file operations to work through IPC
+   - **Priority**: Medium (app only loads local content, but sandbox adds defense-in-depth)
+
+2. **No IPC Sender Validation** ⚠️
+   - Current: IPC handlers don't validate `event.sender`
+   - **Risk**: Any renderer process could send IPC messages
+   - **Recommendation**: Add sender validation to all IPC handlers
+   - **Priority**: High (security best practice)
+
+3. **No Navigation Limits** ⚠️
+   - Current: No `will-navigate` or `did-navigate` handlers
+   - **Risk**: Renderer could navigate to unexpected URLs
+   - **Recommendation**: Add navigation handlers to prevent navigation
+   - **Priority**: Medium (app only loads local content, but good practice)
+
+4. **No Content Security Policy** ⚠️
+   - Current: No CSP meta tag in index.html
+   - **Recommendation**: Add CSP header/meta tag
+   - **Priority**: Medium (defense-in-depth against XSS)
+
+5. **No Session Permission Handler** ⚠️
+   - Current: No `ses.setPermissionRequestHandler`
+   - **Note**: Not critical since we don't load remote content
+   - **Recommendation**: Add for future-proofing
+   - **Priority**: Low
+
+6. **Using file:// Protocol** ⚠️
+   - Current: Production uses `file://` protocol
+   - **Recommendation**: Consider custom protocol (app://) for better security
+   - **Priority**: Low (file:// is acceptable for local-only apps)
+
+7. **shell.openExternal Validation** ⚠️
+   - Current: Validates URL starts with `https:`
+   - **Recommendation**: Add more robust URL validation (whitelist)
+   - **Priority**: Low (current validation is reasonable)
+
+### Security Checklist
+
+Based on [Electron Security Guidelines](https://www.electronjs.org/docs/latest/tutorial/security):
+
+- [x] 1. Only load secure content (local content only)
+- [x] 2. Do not enable Node.js integration for remote content
+- [x] 3. Enable context isolation in all renderers
+- [ ] 4. Enable process sandboxing (currently disabled - see note above)
+- [ ] 5. Use ses.setPermissionRequestHandler() (not critical for local-only app)
+- [x] 6. Do not disable webSecurity (default enabled)
+- [ ] 7. Define a Content Security Policy (missing)
+- [x] 8. Do not enable allowRunningInsecureContent (default disabled)
+- [x] 9. Do not enable experimental features (not used)
+- [x] 10. Do not use enableBlinkFeatures (not used)
+- [x] 11. <webview>: Do not use allowpopups (not using webview)
+- [x] 12. <webview>: Verify options and params (not using webview)
+- [ ] 13. Disable or limit navigation (not implemented)
+- [x] 14. Disable or limit creation of new windows (implemented)
+- [x] 15. Do not use shell.openExternal with untrusted content (validated)
+- [x] 16. Use a current version of Electron (39.2.3)
+- [ ] 17. Validate the sender of all IPC messages (not implemented)
+- [ ] 18. Avoid usage of the file:// protocol (using file://, acceptable for local-only)
+- [ ] 19. Check which fuses you can change (not checked)
+- [x] 20. Do not expose Electron APIs to untrusted web content (properly isolated)
+
+### Recommended Security Improvements
+
+#### High Priority
+
+1. **Add IPC Sender Validation**
+   ```typescript
+   // Helper function to validate sender
+   function validateSender(frame: Electron.WebFrameMain): boolean {
+     // For local-only app, validate it's from our app
+     const url = new URL(frame.url);
+     // In dev: localhost, in prod: file:// protocol
+     return url.protocol === 'file:' || url.hostname === 'localhost';
+   }
+   
+   // Use in all IPC handlers
+   ipcMain.handle('file:open-dialog', async (event) => {
+     if (!validateSender(event.senderFrame)) return null;
+     // ... rest of handler
+   });
+   ```
+
+2. **Add Navigation Limits**
+   ```typescript
+   win.webContents.on('will-navigate', (event, navigationUrl) => {
+     const parsedUrl = new URL(navigationUrl);
+     // Prevent navigation away from local content
+     if (parsedUrl.protocol !== 'file:' && parsedUrl.hostname !== 'localhost') {
+       event.preventDefault();
+     }
+   });
+   ```
+
+#### Medium Priority
+
+3. **Add Content Security Policy**
+   ```html
+   <!-- In index.html -->
+   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;">
+   ```
+
+4. **Enable Sandbox Mode** (requires refactoring)
+   - Move file operations to main process
+   - Use IPC for all file access
+   - Test thoroughly
+
+#### Low Priority
+
+5. **Add Session Permission Handler**
+   ```typescript
+   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+     // Deny all permission requests (we don't need them for local-only app)
+     callback(false);
+   });
+   ```
+
+6. **Consider Custom Protocol**
+   - Replace `file://` with `app://` protocol
+   - Provides better security isolation
+   - Requires protocol registration
+
+### Security Notes
+
+- **Local-Only App**: Since Chunkpad only loads local content and doesn't connect to remote servers, many security concerns are mitigated
+- **File Operations**: All file operations go through main process IPC, which is secure
+- **No Remote Content**: The app doesn't load or execute remote code, reducing attack surface
+- **Defense in Depth**: Even though the app is local-only, implementing additional security measures provides defense-in-depth
+
+### Testing Security
+
+Before releasing, verify:
+- [ ] IPC handlers validate sender
+- [ ] Navigation is prevented to external URLs
+- [ ] CSP is properly configured
+- [ ] No console warnings about security issues
+- [ ] File operations work correctly with security measures
+- [ ] Window creation is properly limited
+
+---
+
+**Last Updated:** v0.1.1 - After security audit based on Electron security guidelines
+
