@@ -90,7 +90,7 @@ if (isDev) {
 // HTML file path
 const indexHtml = path.join(RENDERER_DIST, 'index.html');
 
-async function createWindow() {
+function createWindow() {
   // Log paths for debugging
   console.log('Creating window...');
   console.log('isDev:', isDev);
@@ -99,38 +99,8 @@ async function createWindow() {
   console.log('indexHtml path:', indexHtml);
   console.log('VITE_DEV_SERVER_URL:', VITE_DEV_SERVER_URL);
 
-  // Check if preload file exists and log details
-  try {
-    const fsPromises = await import('node:fs/promises');
-    const stats = await fsPromises.stat(preload);
-    console.log('[PRELOAD] File exists:', preload);
-    console.log('[PRELOAD] File size:', stats.size, 'bytes');
-    console.log('[PRELOAD] File mode:', stats.mode.toString(8));
-    
-    // Try to read first few bytes to check format
-    const fileContent = await fsPromises.readFile(preload, { encoding: 'utf8', flag: 'r' });
-    const firstLine = fileContent.split('\n')[0];
-    console.log('[PRELOAD] First line:', firstLine.substring(0, 100));
-    
-    if (firstLine.includes('import') || firstLine.includes('export')) {
-      console.log('[PRELOAD] Format: ES Module (ESM) ✓');
-    } else if (firstLine.includes('require') || firstLine.includes('"use strict"')) {
-      console.warn('[PRELOAD] Format: CommonJS (unexpected in ESM project)');
-    }
-  } catch (error) {
-    console.error('[PRELOAD] ERROR: File check failed:', error);
-    console.error('[PRELOAD] Attempted path:', preload);
-    console.error('[PRELOAD] __dirname:', __dirname);
-    
-    // List directory contents
-    try {
-      const fsPromises = await import('node:fs/promises');
-      const files = await fsPromises.readdir(__dirname);
-      console.error('[PRELOAD] Files in dist-electron:', files);
-    } catch (dirError) {
-      console.error('[PRELOAD] Could not list directory:', dirError);
-    }
-  }
+  // NOTE: Preload file is already checked at module level (lines 58-88)
+  // Do NOT add file I/O operations here as they can block window creation
 
   console.log('[WINDOW] Creating BrowserWindow with preload:', preload);
   
