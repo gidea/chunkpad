@@ -233,51 +233,101 @@ chunklist/
 </div>
 ```
 
-### 2. Chunking Engine (`src/lib/chunking.ts`)
+### 2. Chunking Engine (`src/lib/chunking/`)
 
-#### Algorithm Overview
+#### Architecture Overview
 
-The chunking engine intelligently splits documents while respecting semantic boundaries and maintaining context through overlap.
+The chunking engine uses a **multi-strategy architecture** that allows users to choose from different chunking algorithms optimized for different document types and use cases. The system is built on a pluggable strategy pattern with a normalized document representation.
 
-**Core Functions**:
+**Key Components**:
 
-1. **`countTokens(text: string): number`**
+1. **Document Normalization** (`src/lib/document/parser.ts`)
+   - Converts HTML from parsers into normalized `DocumentBlock[]` structure
+   - Preserves structure, metadata, and formatting
+   - Enables structure-aware chunking algorithms
+
+2. **Strategy System** (`src/lib/chunking/`)
+   - **Strategy Interface**: Defines contract for all chunking strategies
+   - **Strategy Registry**: Map-based registry for strategy lookup
+   - **Strategy Implementations**: 4 production-ready strategies
+
+3. **Legacy Compatibility** (`src/lib/chunking.ts`)
+   - Maintains backward compatibility with original `chunkDocument()` function
+   - Delegates to fixed-size strategy internally
+
+#### Available Strategies
+
+**1. Fixed-Size Strategy** (`strategies/fixed-size.ts`)
+- Token-based chunking with configurable size and overlap
+- Respects HTML block boundaries
+- Default strategy for backward compatibility
+- Best for: General purpose, unstructured documents
+
+**2. Heading-Aware Strategy** (`strategies/heading-aware.ts`)
+- Groups content under headings, preserving document hierarchy
+- Creates chunks that start at heading boundaries
+- Includes `sectionPath` metadata for hierarchical filtering
+- Best for: Structured documents (manuals, reports, technical docs)
+
+**3. Paragraph-Aware Strategy** (`strategies/paragraph-aware.ts`)
+- Recursive splitting: paragraph → sentence → token level
+- Maintains paragraph coherence
+- Never splits mid-sentence
+- Best for: Narrative content (blog posts, articles, stories)
+
+**4. Sliding Window Strategy** (`strategies/sliding-window.ts`)
+- Creates overlapping chunks with configurable window and overlap
+- Maximum context preservation
+- Preserves word/sentence boundaries
+- Best for: Technical documents where context spanning boundaries is critical
+
+#### Core Functions
+
+1. **`countTokens(text: string): number`** (`utils.ts`)
    - Uses tiktoken with GPT-3.5-turbo encoding
    - Returns accurate token count for AI model compatibility
+   - Shared utility used by all strategies
 
-2. **`chunkDocument(content, targetSize, overlapSize, metadata): Chunk[]`**
-   - Main chunking algorithm
-   - Respects HTML block boundaries
-   - Handles oversized blocks with sentence splitting
-   - Adds overlap between chunks
-   - Generates titles from headings or creates generic titles
+2. **`chunkDocument(content, targetSize, overlapSize, metadata): Chunk[]`** (legacy)
+   - Maintained for backward compatibility
+   - Delegates to fixed-size strategy
+   - Converts HTML → DocumentStructure → chunks
 
-3. **`rechunkDocument(chunks, targetSize, overlapSize, metadata): Chunk[]`**
-   - Combines existing chunks back into document
-   - Re-chunks with new parameters
-   - Useful for dynamic chunk size adjustment
+3. **Strategy Interface** (`strategy.ts`)
+   ```typescript
+   interface ChunkingStrategy {
+     id: string;
+     name: string;
+     description: string;
+     defaultOptions: ChunkingOptions;
+     chunk(structure: DocumentStructure, options: ChunkingOptions, globalMetadata: GlobalMetadata): Chunk[];
+     validateOptions?(options: ChunkingOptions): boolean;
+   }
+   ```
 
 4. **`formatChunkWithFrontMatter(chunk, metadata): string`**
    - Adds YAML front matter to chunk content
    - Merges global and chunk-specific metadata
+   - Includes strategy metadata in exports
 
 #### Chunking Process Flow
 
 ```
-Input: HTML Content
+Input: HTML Content from Parser
       ↓
-Split by block elements (<p>, <h1-6>, <div>, <section>)
+HTML → DocumentStructure Conversion
       ↓
-For each block:
-  ├─ Count tokens
-  ├─ If oversized: split by sentences
-  ├─ If fits in current chunk: append
-  └─ If exceeds target: 
-      ├─ Save current chunk
-      ├─ Add overlap from previous chunk
-      └─ Start new chunk with current block
+Select Strategy (from fileChunkingConfig or default)
       ↓
-Output: Array of Chunk objects
+Strategy.chunk(DocumentStructure, options, metadata)
+      ↓
+Strategy-specific Algorithm:
+  ├─ Fixed-Size: Group blocks until maxTokens
+  ├─ Heading-Aware: Group under headings, preserve hierarchy
+  ├─ Paragraph-Aware: Group paragraphs, recursive fallback
+  └─ Sliding Window: Overlapping windows with boundaries
+      ↓
+Output: Array of Chunk objects with strategy metadata
 ```
 
 #### Chunk Object Structure
@@ -289,26 +339,70 @@ interface Chunk {
   preview: string;      // First 100 chars of text content
   content: string;      // Full HTML content
   tokens?: number;      // Token count
-  metadata?: {          // Optional metadata
+  metadata?: {
+    // User-defined metadata
     topic?: string;
     category?: string;
     "domain-area"?: string;
-    [key: string]: string | undefined;
+    
+    // Strategy metadata (new in v0.2.0+)
+    strategy?: string;              // Strategy ID used
+    strategyOptions?: Record<string, any>; // Options used
+    sectionPath?: string[];         // Heading hierarchy (heading-aware)
+    sourceFile?: string;            // Source file name
+    page?: number;                  // Page number (PDF)
+    slide?: number;                 // Slide number (PPTX)
+    
+    [key: string]: string | string[] | number | undefined;
   };
 }
 ```
 
-#### Chunk Size Strategy
+#### Per-File Strategy Configuration
 
-**Defaults**:
-- Target: 1000 tokens
-- Overlap: 150 tokens
-- Minimum: ~500 tokens
-- Maximum: Flexible (handles oversized blocks)
+Each file in a project can have its own chunking strategy and options:
 
-**Configurable Range**:
-- Target: 200-3000 tokens
-- Overlap: 0-500 tokens
+```typescript
+interface ProjectData {
+  // ... existing fields
+  fileChunkingConfig?: Record<string, {
+    strategy: string;        // Strategy ID
+    options: Record<string, any>; // Strategy-specific options
+  }>;
+}
+```
+
+**Configuration Flow**:
+1. User selects file
+2. Opens Settings dialog
+3. Chooses strategy from dropdown
+4. Configures strategy-specific options
+5. Document is re-chunked with new strategy
+6. Configuration saved in `fileChunkingConfig`
+
+#### Strategy Options
+
+**Common Options** (all strategies):
+- `maxTokens` / `windowSize`: Maximum tokens per chunk (default: 1000)
+- `overlapTokens` / `overlapSize`: Overlap between chunks (default: 150)
+
+**Strategy-Specific Options**:
+- **Heading-Aware**: `subChunkingStrategy` ("paragraph" | "sentence"), `minChunkTokens`
+- **Paragraph-Aware**: `minParagraphsPerChunk`, `maxParagraphsPerChunk`
+- **Sliding Window**: `preserveWordBoundaries`, `preserveSentenceBoundaries`
+
+#### Backward Compatibility
+
+**Migration Strategy**:
+- Old projects without `fileChunkingConfig` automatically migrate
+- `chunkSize`/`overlapSize` → `fileChunkingConfig` with fixed-size strategy
+- All existing chunks remain valid
+- Legacy `chunkDocument()` function still works
+
+**Default Behavior**:
+- New files default to fixed-size strategy (same as before)
+- Existing projects continue to work without changes
+- Users can optionally upgrade to new strategies
 
 ### 3. Editing System
 
