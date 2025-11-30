@@ -127,6 +127,3 @@ npm run electron:dev
 
 Open source and available for use and modification.
 
----
-
-Built with ❤️ using [Lovable](https://lovable.dev)
