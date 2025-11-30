@@ -22,7 +22,14 @@ export interface Chunk {
   preview: string;
   content: string;
   tokens?: number;
-  metadata?: ChunkMetadata;
+  metadata?: ChunkMetadata & {
+    strategy?: string; // Strategy ID used to create this chunk
+    strategyOptions?: Record<string, any>; // Options used for chunking
+    sectionPath?: string[]; // Array of headings: ["Chapter 1", "Section 1.1", "Subsection"]
+    sourceFile?: string; // Source file name/path
+    page?: number; // Page number (PDF)
+    slide?: number; // Slide number (PPTX)
+  };
 }
 
 export type ChunksMap = Record<string, Chunk[]>;
@@ -32,7 +39,11 @@ export interface ProjectData {
   files: DocFile[];
   chunksData: ChunksMap;
   globalMetadata: GlobalMetadata;
-  chunkSize: number;
-  overlapSize: number;
+  chunkSize: number; // Deprecated: use fileChunkingConfig
+  overlapSize: number; // Deprecated: use fileChunkingConfig
+  fileChunkingConfig?: Record<string, { // Per-file chunking configuration
+    strategy: string;
+    options: Record<string, any>;
+  }>;
   lastSaved: string;
 }

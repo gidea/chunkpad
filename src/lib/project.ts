@@ -10,7 +10,8 @@ export function serializeProject(
   chunksData: ChunksMap,
   globalMetadata: GlobalMetadata,
   chunkSize: number,
-  overlapSize: number
+  overlapSize: number,
+  fileChunkingConfig?: Record<string, { strategy: string; options: Record<string, any> }>
 ): ProjectData {
   return {
     version: PROJECT_VERSION,
@@ -19,6 +20,7 @@ export function serializeProject(
     globalMetadata,
     chunkSize,
     overlapSize,
+    fileChunkingConfig,
     lastSaved: new Date().toISOString(),
   };
 }
