@@ -5,6 +5,7 @@ import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { FileUploader } from "@/components/FileUploader";
 import { DocumentMetadataDialog } from "@/components/DocumentMetadataDialog";
 import { SettingsDialog } from "@/components/SettingsDialog";
+import { ChunkingToolbar } from "@/components/ChunkingToolbar";
 import { ExportDialog, ExportDialogRef } from "@/components/ExportDialog";
 import { KeyboardShortcutsDialog } from "@/components/KeyboardShortcutsDialog";
 import { LoadingOverlay } from "@/components/LoadingOverlay";
@@ -15,8 +16,13 @@ import { parseDocx } from "@/lib/docxParser";
 import { parsePptx } from "@/lib/pptxParser";
 import { parsePdf } from "@/lib/pdfParser";
 import { chunkDocument, rechunkDocument, countTokens } from "@/lib/chunking";
+import { htmlToDocumentBlocks } from "@/lib/document/parser";
+import { getStrategy } from "@/lib/chunking/registry";
+import { ChunkingOptions } from "@/lib/chunking/strategy";
+// Initialize chunking strategies
+import "@/lib/chunking/index";
 import { parseFrontMatter } from "@/lib/frontMatter";
-import { ChunksMap, DocFile, GlobalMetadata, ChunkMetadata, Chunk } from "@/types";
+import { ChunksMap, DocFile, GlobalMetadata, ChunkMetadata, Chunk, ProjectData } from "@/types";
 import { useToast } from "@/hooks/use-toast";
 import { serializeProject, parseProject, getProjectFileFilter } from "@/lib/project";
 
@@ -28,6 +34,7 @@ const Index = () => {
   const [chunkSize, setChunkSize] = useState(1000);
   const [overlapSize, setOverlapSize] = useState(150);
   const [globalMetadata, setGlobalMetadata] = useState<GlobalMetadata>({});
+  const [fileChunkingConfig, setFileChunkingConfig] = useState<Record<string, { strategy: string; options: ChunkingOptions }>>({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isEditingFileName, setIsEditingFileName] = useState(false);
   const [editingFileName, setEditingFileName] = useState("");
@@ -82,12 +89,27 @@ const Index = () => {
       setLoadingMessage("Chunking document...");
       setLoadingProgress(60);
 
-      const chunks = chunkDocument(text, chunkSize, overlapSize, globalMetadata);
+      // Convert HTML to DocumentStructure
+      const structure = htmlToDocumentBlocks(text, fileType, fileName);
+      
+      // Get chunking strategy for this file (or use default)
+      const fileId = `file-${Date.now()}`;
+      const fileConfig = fileChunkingConfig[fileId] || {
+        strategy: "fixed-size",
+        options: { maxTokens: chunkSize, overlapTokens: overlapSize },
+      };
+      
+      const strategy = getStrategy(fileConfig.strategy);
+      if (!strategy) {
+        throw new Error(`Strategy "${fileConfig.strategy}" not found`);
+      }
+      
+      const chunks = strategy.chunk(structure, fileConfig.options, globalMetadata);
 
       setLoadingProgress(90);
 
       const newFile: DocFile = {
-        id: `file-${Date.now()}`,
+        id: fileId,
         name: fileName,
         type: fileType,
         filePath: filePath,
@@ -97,6 +119,12 @@ const Index = () => {
       setChunksData((prevChunks) => ({
         ...prevChunks,
         [newFile.id]: chunks,
+      }));
+      
+      // Store chunking config for this file
+      setFileChunkingConfig((prev) => ({
+        ...prev,
+        [fileId]: fileConfig,
       }));
       setSelectedFileId(newFile.id);
       setSelectedChunkId(chunks[0]?.id || null);
@@ -118,7 +146,7 @@ const Index = () => {
         variant: "destructive",
       });
     }
-  }, [chunkSize, overlapSize, globalMetadata, toast]);
+  }, [chunkSize, overlapSize, globalMetadata, fileChunkingConfig, toast]);
 
   // Handle file open from menu or button
   const handleOpenFile = useCallback(async () => {
@@ -185,7 +213,8 @@ const Index = () => {
         chunksData,
         globalMetadata,
         chunkSize,
-        overlapSize
+        overlapSize,
+        fileChunkingConfig
       );
 
       let filePath: string | null;
@@ -242,7 +271,8 @@ const Index = () => {
         chunksData,
         globalMetadata,
         chunkSize,
-        overlapSize
+        overlapSize,
+        fileChunkingConfig
       );
 
       const filePath = await window.electronAPI.saveProject(projectData);
@@ -281,6 +311,24 @@ const Index = () => {
     setChunkSize(projectData.chunkSize);
     setOverlapSize(projectData.overlapSize);
     setProjectPath(filePath);
+    
+    // Restore file chunking config or migrate from old format
+    if (projectData.fileChunkingConfig) {
+      setFileChunkingConfig(projectData.fileChunkingConfig);
+    } else {
+      // Migrate old format to new format
+      const migratedConfig: Record<string, { strategy: string; options: ChunkingOptions }> = {};
+      projectData.files.forEach(file => {
+        migratedConfig[file.id] = {
+          strategy: "fixed-size",
+          options: {
+            maxTokens: projectData.chunkSize,
+            overlapTokens: projectData.overlapSize,
+          },
+        };
+      });
+      setFileChunkingConfig(migratedConfig);
+    }
 
     // Select first file and chunk if available
     if (projectData.files.length > 0) {
@@ -540,75 +588,115 @@ const Index = () => {
   const handleChunkSizeChange = async (newSize: number) => {
     setChunkSize(newSize);
     if (selectedFileId && chunksData[selectedFileId]) {
-      setIsLoading(true);
-      setLoadingMessage("Re-chunking document...");
-      setLoadingProgress(undefined);
+      // Update file config
+      const fileConfig = fileChunkingConfig[selectedFileId] || {
+        strategy: "fixed-size",
+        options: { maxTokens: chunkSize, overlapTokens: overlapSize },
+      };
+      
+      const updatedOptions = {
+        ...fileConfig.options,
+        maxTokens: newSize,
+      };
+      
+      setFileChunkingConfig((prev) => ({
+        ...prev,
+        [selectedFileId]: { ...fileConfig, options: updatedOptions },
+      }));
+      
+      await rechunkWithStrategy(selectedFileId, fileConfig.strategy, updatedOptions);
+    }
+  };
+  
+  const rechunkWithStrategy = async (fileId: string, strategyId: string, options: ChunkingOptions) => {
+    if (!chunksData[fileId]) return;
+    
+    setIsLoading(true);
+    setLoadingMessage("Re-chunking document...");
+    setLoadingProgress(undefined);
 
-      try {
-        // Use setTimeout to allow UI to update
-        await new Promise(resolve => setTimeout(resolve, 0));
-        setLoadingProgress(50);
-        
-        const rechunked = rechunkDocument(chunksData[selectedFileId], newSize, overlapSize, globalMetadata);
-        
-        setChunksData({
-          ...chunksData,
-          [selectedFileId]: rechunked,
-        });
-        setSelectedChunkId(rechunked[0]?.id || null);
-        
-        setIsLoading(false);
-        toast({
-          title: "Document re-chunked",
-          description: `Document re-chunked with size ${newSize} tokens`,
-        });
-      } catch (error) {
-        setIsLoading(false);
-        console.error('Error re-chunking:', error);
-        toast({
-          title: "Re-chunking failed",
-          description: "Could not re-chunk the document",
-          variant: "destructive",
-        });
+    try {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      setLoadingProgress(50);
+      
+      // Reconstruct document from chunks
+      const fullContent = chunksData[fileId].map(c => c.content).join("\n");
+      
+      // Get file type from file
+      const file = files.find(f => f.id === fileId);
+      if (!file) return;
+      
+      // Convert back to DocumentStructure
+      const structure = htmlToDocumentBlocks(fullContent, file.type, file.name);
+      
+      // Get strategy and re-chunk
+      const strategy = getStrategy(strategyId);
+      if (!strategy) {
+        throw new Error(`Strategy "${strategyId}" not found`);
       }
+      
+      const rechunked = strategy.chunk(structure, options, globalMetadata);
+      
+      setChunksData({
+        ...chunksData,
+        [fileId]: rechunked,
+      });
+      setSelectedChunkId(rechunked[0]?.id || null);
+      
+      setIsLoading(false);
+      toast({
+        title: "Document re-chunked",
+        description: `Document re-chunked with ${strategy.name} strategy`,
+      });
+    } catch (error) {
+      setIsLoading(false);
+      console.error('Error re-chunking:', error);
+      toast({
+        title: "Re-chunking failed",
+        description: "Could not re-chunk the document",
+        variant: "destructive",
+      });
     }
   };
 
   const handleOverlapSizeChange = async (newSize: number) => {
     setOverlapSize(newSize);
     if (selectedFileId && chunksData[selectedFileId]) {
-      setIsLoading(true);
-      setLoadingMessage("Re-chunking document...");
-      setLoadingProgress(undefined);
-
-      try {
-        // Use setTimeout to allow UI to update
-        await new Promise(resolve => setTimeout(resolve, 0));
-        setLoadingProgress(50);
-        
-        const rechunked = rechunkDocument(chunksData[selectedFileId], chunkSize, newSize, globalMetadata);
-        
-        setChunksData({
-          ...chunksData,
-          [selectedFileId]: rechunked,
-        });
-        setSelectedChunkId(rechunked[0]?.id || null);
-        
-        setIsLoading(false);
-        toast({
-          title: "Document re-chunked",
-          description: `Document re-chunked with overlap ${newSize} tokens`,
-        });
-      } catch (error) {
-        setIsLoading(false);
-        console.error('Error re-chunking:', error);
-        toast({
-          title: "Re-chunking failed",
-          description: "Could not re-chunk the document",
-          variant: "destructive",
-        });
-      }
+      // Update file config
+      const fileConfig = fileChunkingConfig[selectedFileId] || {
+        strategy: "fixed-size",
+        options: { maxTokens: chunkSize, overlapTokens: overlapSize },
+      };
+      
+      const updatedOptions = {
+        ...fileConfig.options,
+        overlapTokens: newSize,
+      };
+      
+      setFileChunkingConfig((prev) => ({
+        ...prev,
+        [selectedFileId]: { ...fileConfig, options: updatedOptions },
+      }));
+      
+      await rechunkWithStrategy(selectedFileId, fileConfig.strategy, updatedOptions);
     }
+  };
+  
+  const handleStrategyChange = async (strategyId: string, options: ChunkingOptions) => {
+    if (!selectedFileId) return;
+    
+    setFileChunkingConfig((prev) => ({
+      ...prev,
+      [selectedFileId]: { strategy: strategyId, options },
+    }));
+    
+    // Update legacy state for backward compatibility
+    if (options.maxTokens) setChunkSize(options.maxTokens);
+    if (options.overlapTokens) setOverlapSize(options.overlapTokens);
+    if (options.windowSize) setChunkSize(options.windowSize);
+    if (options.overlapSize) setOverlapSize(options.overlapSize);
+    
+    await rechunkWithStrategy(selectedFileId, strategyId, options);
   };
 
   const handleMetadataChange = (metadata: ChunkMetadata) => {
@@ -798,8 +886,11 @@ const Index = () => {
             <SettingsDialog
               chunkSize={chunkSize}
               overlapSize={overlapSize}
+              selectedStrategy={selectedFileId ? (fileChunkingConfig[selectedFileId]?.strategy || "fixed-size") : "fixed-size"}
+              strategyOptions={selectedFileId ? (fileChunkingConfig[selectedFileId]?.options) : undefined}
               onChunkSizeChange={handleChunkSizeChange}
               onOverlapSizeChange={handleOverlapSizeChange}
+              onStrategyChange={handleStrategyChange}
             />
             {currentChunks.length > 0 && (
               <ExportDialog 
@@ -811,6 +902,16 @@ const Index = () => {
             )}
           </div>
         </div>
+
+        {/* Chunking Toolbar - only show when document is selected */}
+        {selectedFileId && (
+          <ChunkingToolbar
+            selectedStrategy={fileChunkingConfig[selectedFileId]?.strategy || "fixed-size"}
+            strategyOptions={fileChunkingConfig[selectedFileId]?.options}
+            onStrategyChange={handleStrategyChange}
+            disabled={isLoading}
+          />
+        )}
 
         <div className="flex-1 flex flex-row min-w-0 overflow-hidden">
           <div className="w-[40%] h-full border-r border-border">
